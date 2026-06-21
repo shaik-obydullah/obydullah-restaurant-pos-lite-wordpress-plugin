@@ -1,0 +1,318 @@
+/**
+ * Product Categories Management
+ * Plugin: Obydullah_Restaurant_POS_Lite
+ * Version: 1.0.1
+ */
+(function ($) {
+  "use strict";
+  let ORPLCategories = {
+    // Configuration (will be populated from wp_localize_script)
+    config: {
+      isSubmitting: false,
+      addNonce: "",
+      editNonce: "",
+      deleteNonce: "",
+      getNonce: "",
+      ajaxUrl: "",
+      strings: {},
+    },
+
+    /**
+     * Initialize categories module
+     * Called from document ready
+     */
+    init: function () {
+      // Load configuration from localized script
+      if (typeof orplCategories !== "undefined") {
+        this.config.addNonce = orplCategories.addNonce || "";
+        this.config.editNonce = orplCategories.editNonce || "";
+        this.config.deleteNonce = orplCategories.deleteNonce || "";
+        this.config.getNonce = orplCategories.getNonce || "";
+        this.config.ajaxUrl = orplCategories.ajaxUrl || "";
+        this.config.strings = orplCategories.strings || {};
+      }
+
+      // Bind events
+      this.bindEvents();
+
+      // Load initial categories
+      this.loadCategories();
+    },
+
+    /**
+     * Bind all event handlers
+     */
+    bindEvents: function () {
+      var self = this;
+
+      // Form submission
+      $("#add-category-form").on("submit", function (e) {
+        e.preventDefault();
+        self.handleCategorySubmit();
+      });
+
+      // Cancel edit
+      $("#cancel-edit").on("click", function () {
+        self.resetForm();
+      });
+
+      // Edit category
+      $(document).on("click", ".pos-action.edit", function () {
+        self.handleEditCategory(this);
+      });
+
+      // Delete category
+      $(document).on("click", ".pos-action.delete", function () {
+        self.handleDeleteCategory(this);
+      });
+    },
+
+    /**
+     * Load categories via AJAX
+     */
+    loadCategories: function () {
+      var self = this;
+
+      $.ajax({
+        url: self.config.ajaxUrl,
+        type: "GET",
+        data: {
+          action: "orpl_get_product_categories",
+          nonce: self.config.getNonce,
+        },
+        success: function (response) {
+          self.renderCategories(response);
+        },
+        error: function () {
+          $("#category-list").html('<tr><td colspan="3" class="text-center text-danger">' + self.config.strings.loadError || "Failed to load categories." + "</td></tr>");
+        },
+      });
+    },
+
+    /**
+     * Render categories in the table
+     */
+    renderCategories: function (response) {
+      var tbody = $("#category-list").empty();
+
+      if (response.success) {
+        if (!response.data.length) {
+          tbody.append('<tr><td colspan="3" class="text-center">' + this.config.strings.noCategories || "No categories found." + "</td></tr>");
+          return;
+        }
+
+        $.each(
+          response.data,
+          function (_, cat) {
+            var row = $("<tr>").attr("data-category-id", cat.id);
+
+            // Name column
+            row.append($("<td>").text(cat.name));
+
+            // Status column
+            var statusClass = cat.status === "active" ? "badge bg-success" : "badge bg-secondary";
+            var statusText = cat.status.charAt(0).toUpperCase() + cat.status.slice(1);
+
+            row.append(
+              $("<td>").append(
+                $("<span>")
+                  .addClass(statusClass + " badge-status")
+                  .text(statusText)
+              )
+            );
+
+            // Actions column
+            var actions = $("<td>").addClass("text-right pos-row-actions");
+
+            actions.append(
+              $("<button>")
+                .addClass("pos-action edit")
+                .text(this.config.strings.edit || "Edit")
+            );
+
+            actions.append(
+              $("<button>")
+                .addClass("pos-action delete")
+                .text(this.config.strings.delete || "Delete")
+            );
+
+            row.append(actions);
+            tbody.append(row);
+          }.bind(this)
+        );
+      } else {
+        tbody.append('<tr><td colspan="3" class="text-center text-danger">' + response.data + "</td></tr>");
+      }
+    },
+
+    /**
+     * Handle category form submission
+     */
+    handleCategorySubmit: function () {
+      var self = this;
+
+      // Prevent double submission
+      if (self.config.isSubmitting) {
+        return false;
+      }
+
+      var id = $("#category-id").val();
+      var action = id ? "orpl_edit_product_category" : "orpl_add_product_category";
+      var name = $("#category-name").val().trim();
+      var status = $("#category-status").val();
+      var nonce = id ? self.config.editNonce : self.config.addNonce;
+
+      // Validation
+      if (!name) {
+        showLimeModal(self.config.strings.nameRequired || "Please enter a category name", "Warning");
+        return false;
+      }
+
+      // Set submitting state
+      self.config.isSubmitting = true;
+      self.setButtonLoading(true);
+
+      // AJAX request
+      $.post(
+        self.config.ajaxUrl,
+        {
+          action: action,
+          id: id,
+          name: name,
+          status: status,
+          nonce: nonce,
+        },
+        function (response) {
+          if (response.success) {
+            self.resetForm();
+            self.loadCategories();
+            showLimeModal(response.data, "Success");
+          } else {
+            showLimeModal((self.config.strings.error || "Error") + ": " + response.data, "Error");
+          }
+        }.bind(this)
+      )
+        .fail(function () {
+          showLimeModal(self.config.strings.requestFailed || "Request failed. Please try again.", "Error");
+        })
+
+        .always(function () {
+          // Reset submitting state
+          self.config.isSubmitting = false;
+          self.setButtonLoading(false);
+        });
+    },
+
+    /**
+     * Handle edit category button click
+     */
+    handleEditCategory: function (button) {
+      var row = $(button).closest("tr");
+      var categoryId = row.data("category-id");
+      var name = row.find("td").eq(0).text();
+
+      // Get status from badge
+      var statusBadge = row.find("td").eq(1).find("span");
+      var statusText = statusBadge.text().toLowerCase();
+      var isActive = statusText === "active";
+
+      // Populate form
+      $("#category-id").val(categoryId);
+      $("#category-name").val(name);
+      $("#category-status").val(isActive ? "active" : "inactive");
+
+      // Update UI for edit mode
+      $("#form-title").text(this.config.strings.editCategory || "Edit Category");
+      $("#cancel-edit").show();
+      $("#submit-category .btn-text").text(this.config.strings.updateCategory || "Update Category");
+      $("#category-name").focus();
+    },
+
+    /**
+     * Handle delete category button click
+     */
+    handleDeleteCategory: function (button) {
+      var self = this;
+      var $button = $(button);
+      var originalText = $button.text();
+      var categoryId = $button.closest("tr").data("category-id");
+
+      showLimeConfirm(
+        this.config.strings.confirmDelete || "Are you sure you want to delete this category?",
+        function onYes() {
+          // User clicked Yes
+          $button.prop("disabled", true).text(self.config.strings.deleting);
+
+          $.post(
+            self.config.ajaxUrl,
+            {
+              action: "orpl_delete_product_category",
+              id: categoryId,
+              nonce: self.config.deleteNonce,
+            },
+            function (response) {
+              if (response.success) {
+                self.loadCategories();
+              }
+              showLimeModal(response.data, response.success ? "Success" : "Error");
+            }
+          )
+            .fail(function () {
+              showLimeModal(self.config.strings.deleteFailed || "Delete request failed. Please try again.", "Error");
+            })
+            .always(function () {
+              $button.prop("disabled", false).text(originalText);
+            });
+        },
+        "Confirm Delete"
+      );
+    },
+
+    /**
+     * Set loading state for submit button
+     */
+    setButtonLoading: function (loading) {
+      var button = $("#submit-category");
+      var spinner = button.find(".spinner");
+      var btnText = button.find(".btn-text");
+
+      if (loading) {
+        button.prop("disabled", true);
+        spinner.show();
+        var isEditMode = $("#category-id").val() !== "";
+        btnText.text(isEditMode ? this.config.strings.updating : this.config.strings.saving);
+      } else {
+        button.prop("disabled", false);
+        spinner.hide();
+        var isEditMode = $("#category-id").val() !== "";
+        btnText.text(isEditMode ? this.config.strings.updateCategory || "Update Category" : this.config.strings.saveCategory || "Save Category");
+      }
+    },
+
+    /**
+     * Reset form to initial state
+     */
+    resetForm: function () {
+      $("#category-id").val("");
+      $("#category-name").val("");
+      $("#category-status").val("active");
+
+      // Update UI
+      $("#form-title").text(this.config.strings.addNewCategory || "Add New Category");
+      $("#cancel-edit").hide();
+      $("#submit-category .btn-text").text(this.config.strings.saveCategory || "Save Category");
+      $("#submit-category").prop("disabled", false);
+      $("#submit-category .spinner").hide();
+      $("#category-name").focus();
+    },
+  };
+
+  /**
+   * Initialize when document is ready
+   */
+  $(document).ready(function () {
+    if ($("#add-category-form").length) {
+      ORPLCategories.init();
+    }
+  });
+})(jQuery);
