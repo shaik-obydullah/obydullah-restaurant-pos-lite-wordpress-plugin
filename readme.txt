@@ -2,8 +2,8 @@
 Contributors: obydullah
 Donate link: https://obydullah.com
 Tags: point of sale, orders, sales, inventory, takeaway
-Requires at least: 5.0
-Tested up to: 7.0
+Requires at least: 6.0
+Tested up to: 7.1
 Stable tag: 1.0.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -92,7 +92,7 @@ Watch the full tutorial and demo of Obydullah Restaurant POS Lite here: [Video T
 
 = Minimum Requirements =
 
-* WordPress 5.0 or higher
+* WordPress 6.0 or higher
 * PHP 7.4 or higher
 * MySQL 5.6 or higher
 
